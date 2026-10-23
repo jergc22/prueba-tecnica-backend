@@ -1,6 +1,11 @@
 spring:
   application:
     name: similar-products
+  cache:
+    type: caffeine
+    cache-names: products,similarIds
+    caffeine:
+      spec: maximumSize=10000,expireAfterWrite=60s
   threads:
     virtual:
       enabled: true

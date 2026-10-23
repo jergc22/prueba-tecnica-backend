@@ -1,6 +1,7 @@
 package com.jeremy.similarproducts.client;
 
 import com.jeremy.similarproducts.model.ProductDetail;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -22,7 +23,10 @@ public class HttpProductClient implements ProductClient {
         this.restClient = productsRestClient;
     }
 
+    // sync = true: si varias peticiones piden la misma clave a la vez, solo una va a la API.
+    // Spring no cachea las excepciones, así que 404, 5xx y timeouts no se guardan.
     @Override
+    @Cacheable(cacheNames = "similarIds", sync = true)
     public List<String> findSimilarIds(String productId) {
         return call(productId, () -> restClient.get()
                 .uri("/product/{id}/similarids", productId)
@@ -33,6 +37,7 @@ public class HttpProductClient implements ProductClient {
     }
 
     @Override
+    @Cacheable(cacheNames = "products", sync = true)
     public ProductDetail findById(String productId) {
         return call(productId, () -> restClient.get()
                 .uri("/product/{id}", productId)

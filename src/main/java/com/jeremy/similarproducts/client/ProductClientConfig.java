@@ -1,6 +1,7 @@
 package com.jeremy.similarproducts.client;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -12,6 +13,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 @Configuration
+@EnableCaching
 public class ProductClientConfig {
 
     @Bean
