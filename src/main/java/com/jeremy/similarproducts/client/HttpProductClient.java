@@ -5,8 +5,10 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import java.util.List;
+import java.util.function.Supplier;
 
 @Component
 public class HttpProductClient implements ProductClient {
@@ -22,21 +24,32 @@ public class HttpProductClient implements ProductClient {
 
     @Override
     public List<String> findSimilarIds(String productId) {
-        return restClient.get()
+        return call(productId, () -> restClient.get()
                 .uri("/product/{id}/similarids", productId)
                 .retrieve()
                 .onStatus(status -> status.isSameCodeAs(HttpStatus.NOT_FOUND),
                         (request, response) -> { throw new ProductNotFoundException(productId); })
-                .body(IDS_TYPE);
+                .body(IDS_TYPE));
     }
 
     @Override
     public ProductDetail findById(String productId) {
-        return restClient.get()
+        return call(productId, () -> restClient.get()
                 .uri("/product/{id}", productId)
                 .retrieve()
                 .onStatus(status -> status.isSameCodeAs(HttpStatus.NOT_FOUND),
                         (request, response) -> { throw new ProductNotFoundException(productId); })
-                .body(ProductDetail.class);
+                .body(ProductDetail.class));
+    }
+
+    /** Traduce 5xx, timeouts y errores de red a una excepción propia; el 404 se deja pasar. */
+    private <T> T call(String productId, Supplier<T> request) {
+        try {
+            return request.get();
+        } catch (ProductNotFoundException e) {
+            throw e;
+        } catch (RestClientException e) {
+            throw new ProductServiceException("Error calling products API for product " + productId, e);
+        }
     }
 }
