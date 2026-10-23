@@ -7,3 +7,7 @@ spring:
 
 server:
   port: 5000
+
+products:
+  api:
+    base-url: http://localhost:3001
