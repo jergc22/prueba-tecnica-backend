@@ -11,3 +11,5 @@ server:
 products:
   api:
     base-url: http://localhost:3001
+    connect-timeout: 500ms
+    read-timeout: 1500ms
