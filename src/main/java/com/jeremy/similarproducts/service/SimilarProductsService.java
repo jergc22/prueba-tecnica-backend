@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 
 @Service
 public class SimilarProductsService {
@@ -17,9 +17,9 @@ public class SimilarProductsService {
     private static final Logger log = LoggerFactory.getLogger(SimilarProductsService.class);
 
     private final ProductClient productClient;
-    private final Executor executor;
+    private final ExecutorService executor;
 
-    public SimilarProductsService(ProductClient productClient, Executor productsExecutor) {
+    public SimilarProductsService(ProductClient productClient, ExecutorService productsExecutor) {
         this.productClient = productClient;
         this.executor = productsExecutor;
     }
@@ -46,8 +46,13 @@ public class SimilarProductsService {
         try {
             return productClient.findById(id);
         } catch (RuntimeException e) {
-            log.warn("Omitting similar product {}: {}", id, e.getMessage());
+            log.warn("Omitting similar product {}: {}", id, describe(e));
             return null;
         }
+    }
+
+    private static String describe(Throwable e) {
+        Throwable cause = e.getCause() != null ? e.getCause() : e;
+        return cause.getClass().getSimpleName() + ": " + cause.getMessage();
     }
 }

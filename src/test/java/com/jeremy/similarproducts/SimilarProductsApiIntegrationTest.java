@@ -16,6 +16,11 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
@@ -143,6 +148,31 @@ class SimilarProductsApiIntegrationTest {
         getSimilar("4");
 
         wireMock.verify(2, getRequestedFor(urlEqualTo("/product/6")));
+    }
+
+    @Test
+    void concurrentRequestsToASlowSimilarDoNotQueueUpBehindEachOther() throws Exception {
+        stubIds("2", "[3,1000]");
+        stubProduct("3", "Blazer", "29.99", false);
+        wireMock.stubFor(get(urlEqualTo("/product/1000")).willReturn(aResponse()
+                .withStatus(200)
+                .withFixedDelay(3000)));
+
+        int requests = 10;
+        long start = System.nanoTime();
+        try (ExecutorService callers = Executors.newFixedThreadPool(requests)) {
+            List<Future<HttpResponse<String>>> futures = new ArrayList<>();
+            for (int i = 0; i < requests; i++) {
+                futures.add(callers.submit(() -> getSimilar("2")));
+            }
+            for (Future<HttpResponse<String>> future : futures) {
+                assertThat(future.get().statusCode()).isEqualTo(200);
+            }
+        }
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+        // Si se encolaran, 10 peticiones x 500 ms de timeout superarían los 5 s.
+        assertThat(elapsedMs).isLessThan(2000);
     }
 
     private HttpResponse<String> getSimilar(String productId) throws Exception {

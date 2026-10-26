@@ -23,10 +23,11 @@ public class HttpProductClient implements ProductClient {
         this.restClient = productsRestClient;
     }
 
-    // sync = true: si varias peticiones piden la misma clave a la vez, solo una va a la API.
-    // Spring no cachea las excepciones, así que 404, 5xx y timeouts no se guardan.
+    // Spring no cachea las excepciones: 404, 5xx y timeouts no se guardan.
+    // Sin sync = true a propósito: con fallos sin cachear, sync serializaría las peticiones
+    // concurrentes a una misma clave y cada una pagaría el timeout completo, una tras otra.
     @Override
-    @Cacheable(cacheNames = "similarIds", sync = true)
+    @Cacheable("similarIds")
     public List<String> findSimilarIds(String productId) {
         return call(productId, () -> restClient.get()
                 .uri("/product/{id}/similarids", productId)
@@ -37,7 +38,7 @@ public class HttpProductClient implements ProductClient {
     }
 
     @Override
-    @Cacheable(cacheNames = "products", sync = true)
+    @Cacheable("products")
     public ProductDetail findById(String productId) {
         return call(productId, () -> restClient.get()
                 .uri("/product/{id}", productId)
