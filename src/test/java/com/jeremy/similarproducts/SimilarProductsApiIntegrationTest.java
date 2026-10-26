@@ -1,0 +1,165 @@
+package com.jeremy.similarproducts;
+
+import com.github.tomakehurst.wiremock.WireMockServer;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.cache.CacheManager;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * Levanta la aplicación completa contra un WireMock que hace de API existente,
+ * simulando los mismos casos que los mocks del enunciado: retrasos, 404 y 500.
+ */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {"products.api.read-timeout=500ms"})
+class SimilarProductsApiIntegrationTest {
+
+    private static final WireMockServer wireMock = new WireMockServer(0);
+
+    @LocalServerPort
+    private int port;
+
+    @Autowired
+    private CacheManager cacheManager;
+
+    private final HttpClient http = HttpClient.newHttpClient();
+
+    @BeforeAll
+    static void startWireMock() {
+        wireMock.start();
+    }
+
+    @AfterAll
+    static void stopWireMock() {
+        wireMock.stop();
+    }
+
+    @DynamicPropertySource
+    static void properties(DynamicPropertyRegistry registry) {
+        registry.add("products.api.base-url", wireMock::baseUrl);
+    }
+
+    @BeforeEach
+    void resetState() {
+        wireMock.resetAll();
+        cacheManager.getCacheNames().forEach(name -> cacheManager.getCache(name).clear());
+    }
+
+    @Test
+    void returnsSimilarProductsInOrder() throws Exception {
+        stubIds("1", "[2,3]");
+        stubProduct("2", "Dress", "19.99", true);
+        stubProduct("3", "Blazer", "29.99", false);
+
+        HttpResponse<String> response = getSimilar("1");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).isEqualTo(
+                "[{\"id\":\"2\",\"name\":\"Dress\",\"price\":19.99,\"availability\":true},"
+                        + "{\"id\":\"3\",\"name\":\"Blazer\",\"price\":29.99,\"availability\":false}]");
+    }
+
+    @Test
+    void returns404WhenTheProductDoesNotExist() throws Exception {
+        wireMock.stubFor(get(urlEqualTo("/product/99/similarids")).willReturn(aResponse().withStatus(404)));
+
+        assertThat(getSimilar("99").statusCode()).isEqualTo(404);
+    }
+
+    @Test
+    void omitsSimilarProductsThatReturn404Or500() throws Exception {
+        stubIds("4", "[1,5,6]");
+        stubProduct("1", "Shirt", "9.99", true);
+        wireMock.stubFor(get(urlEqualTo("/product/5")).willReturn(aResponse().withStatus(404)));
+        wireMock.stubFor(get(urlEqualTo("/product/6")).willReturn(aResponse().withStatus(500)));
+
+        HttpResponse<String> response = getSimilar("4");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).isEqualTo("[{\"id\":\"1\",\"name\":\"Shirt\",\"price\":9.99,\"availability\":true}]");
+    }
+
+    @Test
+    void omitsSimilarProductsThatExceedTheTimeout() throws Exception {
+        stubIds("2", "[3,1000]");
+        stubProduct("3", "Blazer", "29.99", false);
+        wireMock.stubFor(get(urlEqualTo("/product/1000")).willReturn(aResponse()
+                .withStatus(200)
+                .withHeader("Content-Type", "application/json")
+                .withBody("{\"id\":\"1000\",\"name\":\"Slow\",\"price\":1,\"availability\":true}")
+                .withFixedDelay(3000)));
+
+        long start = System.nanoTime();
+        HttpResponse<String> response = getSimilar("2");
+        long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("\"id\":\"3\"").doesNotContain("1000");
+        assertThat(elapsedMs).isLessThan(2500);
+    }
+
+    @Test
+    void returns502WhenTheSimilarIdsApiFails() throws Exception {
+        wireMock.stubFor(get(urlEqualTo("/product/7/similarids")).willReturn(aResponse().withStatus(500)));
+
+        assertThat(getSimilar("7").statusCode()).isEqualTo(502);
+    }
+
+    @Test
+    void cachesSuccessfulResponses() throws Exception {
+        stubIds("1", "[2]");
+        stubProduct("2", "Dress", "19.99", true);
+
+        getSimilar("1");
+        getSimilar("1");
+
+        wireMock.verify(1, getRequestedFor(urlEqualTo("/product/1/similarids")));
+        wireMock.verify(1, getRequestedFor(urlEqualTo("/product/2")));
+    }
+
+    @Test
+    void doesNotCacheFailures() throws Exception {
+        stubIds("4", "[6]");
+        wireMock.stubFor(get(urlEqualTo("/product/6")).willReturn(aResponse().withStatus(500)));
+
+        getSimilar("4");
+        getSimilar("4");
+
+        wireMock.verify(2, getRequestedFor(urlEqualTo("/product/6")));
+    }
+
+    private HttpResponse<String> getSimilar(String productId) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/product/" + productId + "/similar")).build();
+        return http.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private void stubIds(String productId, String jsonIds) {
+        wireMock.stubFor(get(urlEqualTo("/product/" + productId + "/similarids")).willReturn(aResponse()
+                .withHeader("Content-Type", "application/json")
+                .withBody(jsonIds)));
+    }
+
+    private void stubProduct(String id, String name, String price, boolean availability) {
+        wireMock.stubFor(get(urlEqualTo("/product/" + id)).willReturn(aResponse()
+                .withHeader("Content-Type", "application/json")
+                .withBody("{\"id\":\"" + id + "\",\"name\":\"" + name + "\",\"price\":" + price
+                        + ",\"availability\":" + availability + "}")));
+    }
+}
