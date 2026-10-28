@@ -10,6 +10,8 @@ GET http://localhost:5000/product/{productId}/similar
 - APIs existentes que consume: [`existingApis.yaml`](existingApis.yaml)
 - Enunciado original: https://github.com/dalogax/backendDevTest
 
+Es la prueba de backend del proceso. La de frontend es otra prueba independiente, con su propio API, y está en [prueba-tecnica-frontend](https://github.com/jergc22/prueba-tecnica-frontend).
+
 ## Arranque rápido
 
 Solo hace falta Docker (y `make`):
