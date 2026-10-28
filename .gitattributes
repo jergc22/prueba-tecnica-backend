@@ -1,2 +1,4 @@
 /mvnw text eol=lf
 *.cmd text eol=crlf
+Makefile text eol=lf
+Dockerfile text eol=lf

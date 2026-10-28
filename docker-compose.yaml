@@ -1,5 +1,14 @@
 name: backend
 services:
+  app:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      # Dentro de la red de compose los mocks se llaman por su nombre de servicio.
+      - PRODUCTS_API_BASE_URL=http://simulado:80
+    depends_on:
+      - simulado
   influxdb:
     image: influxdb:1.8.2
     ports:
