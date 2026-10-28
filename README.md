@@ -53,7 +53,7 @@ Con JDK 21+: `make mocks` para levantar solo los mocks y `make run` para arranca
 
 ## Stack
 
-- Java 21 y Spring Boot 4.1 (el enunciado sugiere 3.x, pero start.spring.io ya solo ofrece 4.x).
+- Java 21 y Spring Boot 4.1, la versión actual.
 - Spring MVC con hilos virtuales.
 - `RestClient` sobre el `HttpClient` del JDK.
 - Caffeine con Spring Cache.
@@ -84,7 +84,7 @@ En serie, el producto 2 tardaría más de 6 s. En paralelo, lo que tarde el simi
 
 Conexión 500 ms y lectura 1,5 s, configurables en `application.yml` (`products.api.*`).
 
-Sin timeouts, el similar que tarda 50 s ocuparía una conexión por petición y con 200 usuarios el servicio se degradaría. Con 1,5 s pasa el similar lento de 1 s y se cortan los de 5 s y 50 s. Cada petición queda acotada a unos 1,5 s, aunque la respuesta llegue goteando.
+Sin timeouts, el similar que tarda 50 s ocuparía una conexión por petición y con 200 usuarios el servicio se degradaría. Con 1,5 s pasa el similar lento de 1 s y se cortan los de 5 s y 50 s. Como primero se piden los ids y después los detalles (estos en paralelo), cada petición queda acotada a unos 3 s en el peor caso, más el tiempo de conexión. El timeout de lectura cubre también el cuerpo: lo he comprobado con un servidor que lo envía byte a byte, y la llamada se corta a los 1,5 s.
 
 ### Si falla un similar: respuesta parcial
 
