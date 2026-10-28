@@ -24,14 +24,6 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ProductServiceException.class)
     @ResponseStatus(HttpStatus.BAD_GATEWAY)
     public void handleUpstreamFailure(ProductServiceException e) {
-        log.warn("Upstream failure: {} ({})", e.getMessage(), rootCause(e));
-    }
-
-    private static String rootCause(Throwable e) {
-        Throwable cause = e;
-        while (cause.getCause() != null) {
-            cause = cause.getCause();
-        }
-        return cause.getClass().getSimpleName() + ": " + cause.getMessage();
+        log.warn("Upstream failure: {} ({})", e.getMessage(), e.rootCauseDescription());
     }
 }

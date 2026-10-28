@@ -1,6 +1,8 @@
 package com.jeremy.similarproducts.service;
 
 import com.jeremy.similarproducts.client.ProductClient;
+import com.jeremy.similarproducts.client.ProductNotFoundException;
+import com.jeremy.similarproducts.client.ProductServiceException;
 import com.jeremy.similarproducts.model.ProductDetail;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,11 +28,14 @@ public class SimilarProductsService {
 
     /**
      * Pide los detalles en paralelo y conserva el orden de similitud. Si un similar falla
-     * (404, 5xx o timeout) se omite y se devuelve el resto (respuesta parcial).
+     * (404, 5xx, timeout o respuesta inválida) se omite y se devuelve el resto (respuesta parcial).
      * Si falla la consulta de ids, la excepción se propaga: 404 o 502 según el caso.
      */
     public List<ProductDetail> findSimilar(String productId) {
-        List<String> similarIds = productClient.findSimilarIds(productId);
+        // distinct: el contrato exige elementos únicos; conserva el orden de la primera aparición.
+        List<String> similarIds = productClient.findSimilarIds(productId).stream()
+                .distinct()
+                .toList();
 
         List<CompletableFuture<ProductDetail>> futures = similarIds.stream()
                 .map(id -> CompletableFuture.supplyAsync(() -> fetchOrNull(id), executor))
@@ -42,17 +47,16 @@ public class SimilarProductsService {
                 .toList();
     }
 
+    // Solo se capturan los fallos esperados de la API: un error de programación no se esconde.
     private ProductDetail fetchOrNull(String id) {
         try {
             return productClient.findById(id);
-        } catch (RuntimeException e) {
-            log.warn("Omitting similar product {}: {}", id, describe(e));
+        } catch (ProductNotFoundException e) {
+            log.debug("Omitting similar product {}: not found", id);
+            return null;
+        } catch (ProductServiceException e) {
+            log.warn("Omitting similar product {}: {}", id, e.rootCauseDescription());
             return null;
         }
-    }
-
-    private static String describe(Throwable e) {
-        Throwable cause = e.getCause() != null ? e.getCause() : e;
-        return cause.getClass().getSimpleName() + ": " + cause.getMessage();
     }
 }

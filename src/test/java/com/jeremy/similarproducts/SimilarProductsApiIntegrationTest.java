@@ -151,6 +151,53 @@ class SimilarProductsApiIntegrationTest {
     }
 
     @Test
+    void doesNotRepeatProductsWhenSimilarIdsContainDuplicates() throws Exception {
+        stubIds("1", "[2,2,3,2]");
+        stubProduct("2", "Dress", "19.99", true);
+        stubProduct("3", "Blazer", "29.99", false);
+
+        HttpResponse<String> response = getSimilar("1");
+
+        assertThat(response.body()).isEqualTo(
+                "[{\"id\":\"2\",\"name\":\"Dress\",\"price\":19.99,\"availability\":true},"
+                        + "{\"id\":\"3\",\"name\":\"Blazer\",\"price\":29.99,\"availability\":false}]");
+        wireMock.verify(1, getRequestedFor(urlEqualTo("/product/2")));
+    }
+
+    @Test
+    void ignoresNullOrBlankIdsInSimilarIds() throws Exception {
+        stubIds("1", "[2,null,\"\"]");
+        stubProduct("2", "Dress", "19.99", true);
+
+        HttpResponse<String> response = getSimilar("1");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains("\"id\":\"2\"");
+        wireMock.verify(0, getRequestedFor(urlEqualTo("/product/null")));
+    }
+
+    @Test
+    void returns502WhenSimilarIdsBodyIsEmpty() throws Exception {
+        stubIds("1", "null");
+
+        assertThat(getSimilar("1").statusCode()).isEqualTo(502);
+    }
+
+    @Test
+    void omitsSimilarProductsThatDoNotFulfilTheContract() throws Exception {
+        stubIds("1", "[2,3,4,5]");
+        stubProduct("2", "Dress", "19.99", true);
+        stubRaw("3", "{\"id\":\"3\",\"name\":\"NoPrice\",\"availability\":true}");
+        stubRaw("4", "{\"id\":\"4\",\"name\":\"\",\"price\":1,\"availability\":true}");
+        stubRaw("5", "null");
+
+        HttpResponse<String> response = getSimilar("1");
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).isEqualTo("[{\"id\":\"2\",\"name\":\"Dress\",\"price\":19.99,\"availability\":true}]");
+    }
+
+    @Test
     void concurrentRequestsToASlowSimilarDoNotQueueUpBehindEachOther() throws Exception {
         stubIds("2", "[3,1000]");
         stubProduct("3", "Blazer", "29.99", false);
@@ -184,6 +231,12 @@ class SimilarProductsApiIntegrationTest {
         wireMock.stubFor(get(urlEqualTo("/product/" + productId + "/similarids")).willReturn(aResponse()
                 .withHeader("Content-Type", "application/json")
                 .withBody(jsonIds)));
+    }
+
+    private void stubRaw(String id, String json) {
+        wireMock.stubFor(get(urlEqualTo("/product/" + id)).willReturn(aResponse()
+                .withHeader("Content-Type", "application/json")
+                .withBody(json)));
     }
 
     private void stubProduct(String id, String name, String price, boolean availability) {

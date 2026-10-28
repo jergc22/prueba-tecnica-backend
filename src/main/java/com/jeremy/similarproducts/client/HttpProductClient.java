@@ -9,6 +9,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 @Component
@@ -29,26 +30,36 @@ public class HttpProductClient implements ProductClient {
     @Override
     @Cacheable("similarIds")
     public List<String> findSimilarIds(String productId) {
-        return call(productId, () -> restClient.get()
+        List<String> ids = call(productId, () -> restClient.get()
                 .uri("/product/{id}/similarids", productId)
                 .retrieve()
                 .onStatus(status -> status.isSameCodeAs(HttpStatus.NOT_FOUND),
                         (request, response) -> { throw new ProductNotFoundException(productId); })
                 .body(IDS_TYPE));
+        requireBody(ids, productId);
+        return ids.stream()
+                .filter(Objects::nonNull)
+                .filter(id -> !id.isBlank())
+                .toList();
     }
 
     @Override
     @Cacheable("products")
     public ProductDetail findById(String productId) {
-        return call(productId, () -> restClient.get()
+        ProductDetail product = call(productId, () -> restClient.get()
                 .uri("/product/{id}", productId)
                 .retrieve()
                 .onStatus(status -> status.isSameCodeAs(HttpStatus.NOT_FOUND),
                         (request, response) -> { throw new ProductNotFoundException(productId); })
                 .body(ProductDetail.class));
+        requireBody(product, productId);
+        return product;
     }
 
-    /** Traduce 5xx, timeouts y errores de red a una excepción propia; el 404 se deja pasar. */
+    /**
+     * Traduce 5xx, timeouts, errores de red y respuestas que no cumplen el contrato (JSON inválido,
+     * campos obligatorios ausentes) a una excepción propia. El 404 se deja pasar.
+     */
     private <T> T call(String productId, Supplier<T> request) {
         try {
             return request.get();
@@ -56,6 +67,12 @@ public class HttpProductClient implements ProductClient {
             throw e;
         } catch (RestClientException e) {
             throw new ProductServiceException("Error calling products API for product " + productId, e);
+        }
+    }
+
+    private static void requireBody(Object body, String productId) {
+        if (body == null) {
+            throw new ProductServiceException("Empty response from products API for product " + productId, null);
         }
     }
 }

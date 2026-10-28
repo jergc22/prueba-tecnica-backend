@@ -17,6 +17,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SimilarProductsServiceTest {
@@ -66,6 +68,26 @@ class SimilarProductsServiceTest {
         List<ProductDetail> result = service.findSimilar("1");
 
         assertThat(result).extracting(ProductDetail::id).containsExactly("2", "5");
+    }
+
+    @Test
+    void removesDuplicatedSimilarIdsKeepingTheFirstOccurrence() {
+        when(client.findSimilarIds("1")).thenReturn(List.of("3", "2", "3"));
+        when(client.findById("2")).thenReturn(product("2"));
+        when(client.findById("3")).thenReturn(product("3"));
+
+        List<ProductDetail> result = service.findSimilar("1");
+
+        assertThat(result).extracting(ProductDetail::id).containsExactly("3", "2");
+        verify(client, times(1)).findById("3");
+    }
+
+    @Test
+    void doesNotHideUnexpectedErrors() {
+        when(client.findSimilarIds("1")).thenReturn(List.of("2"));
+        when(client.findById("2")).thenThrow(new IllegalStateException("bug"));
+
+        assertThatThrownBy(() -> service.findSimilar("1")).hasRootCauseInstanceOf(IllegalStateException.class);
     }
 
     @Test
